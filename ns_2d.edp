@@ -4,7 +4,7 @@ include "macro_ddm.idp"
 load "iovtk"
 
 bool importMesh = true;
-string meshFileName = "mesh/bended_pipe_2d.mesh";
+string meshFileName = "mesh/bend_pipe_2d.mesh";
 string outputFileName = "output/output-2d.vtu";
 
 bool solveDiffusion = true;

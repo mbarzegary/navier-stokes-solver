@@ -3,7 +3,7 @@ macro dimension()3// EOM
 include "macro_ddm.idp"
 load "iovtk"
 
-string meshFileName = "mesh/bended_pipe_3d_coarse.mesh";
+string meshFileName = "mesh/bend_pipe_3d_coarse.mesh";
 string outputFileName = "output/output-3d";
 
 bool solveDiffusion = true;
