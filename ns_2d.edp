@@ -1,0 +1,152 @@
+load "PETSc"
+macro dimension()2// EOM
+include "macro_ddm.idp"
+load "iovtk"
+
+bool importMesh = true;
+string meshFileName = "mesh/bended_pipe_2d.mesh";
+string outputFileName = "output/output-2d.vtu";
+
+bool solveDiffusion = true;
+
+int Wall = 1;
+int Inlet = 3;
+int Outlet = 2;
+int InnerWall = 4;
+
+int nn = 30;
+real L = 2.;
+real D = 1.;
+
+real uin = 0.3;
+func fx = 0;
+func fy = 0;
+
+real rho = 500.;
+real mu = 0.1;
+
+real Dc = 0.001;
+real cBC = 0.1;
+
+real dt = 0.1;
+real T = 200;
+int saveEach = 0.5/dt;;
+int[int] orderOut = [1, 1, 1, 1];
+
+macro div(u) (dx(u#x) + dy(u#y))//
+macro grad(u) [dx(u), dy(u)]//
+macro Grad(u) [grad(u#x), grad(u#y)]//
+
+mesh Mesh;
+
+if (importMesh)
+{
+  Mesh = readmesh(meshFileName);
+}
+else
+{
+  int nnL = max(2., L*nn);
+  int nnD = max(2., D*nn);
+
+  if (mpirank == 0)
+  {
+    border b1(t=0., 1.){x=L*t; y=0.; label=Wall;};
+    border b2(t=0., 1.){x=L; y=D*t; label=Outlet;};
+    border b3(t=0., 1.){x=L-L*t; y=D; label=Wall;};
+    border b4(t=0., 1.){x=0.; y=D-D*t; label=Inlet;};
+    border b5(t=2*pi, 0){x=L/2+0.2*sin(t); y=D/2+0.2*cos(t); label=InnerWall;}
+
+    Mesh = buildmesh(b1(nnL) + b2(nnD) + b3(nnL) + b4(nnD) + b5(-2*nn));
+  }
+  broadcast(processor(0), Mesh);
+}
+
+if (mpirank == 0)
+  cout << "Number of Elements: " + Mesh.nt << endl;
+
+func PkVector = [P2, P2, P1];
+func Pk = P1;
+
+Mat NS, A;
+buildDmesh(Mesh);
+{
+  macro def(i)[i, i#B, i#C]//
+  macro init(i)[i, i, i]//
+  createMat(Mesh, NS, PkVector)
+}
+{
+  macro def(i)i//
+  macro init(i)i//
+  createMat(Mesh, A, Pk)
+}
+
+fespace SpaceP1(Mesh, Pk);
+SpaceP1 c, cold;
+
+fespace SpaceVector(Mesh, PkVector);
+SpaceVector [ux, uy, p];
+SpaceVector [uhx, uhy, ph];
+SpaceVector [upx, upy, pp];
+
+if (mpirank == 0)
+  cout << "Finite Element DOF (in each partition): " + SpaceVector.ndof << endl;
+
+varf diffuse(c, v) =
+    int2d(Mesh)(c/dt*v)
+    + int2d(Mesh)(Dc*(grad(c)' * grad(v)))
+    // + int2d(Mesh)(cold/dt*v)
+    // + int2d(Mesh)((ux*dx(c) + uy*dy(c))*v)
+    + int2d(Mesh)(convect([ux, uy], -dt, cold)*v/dt)
+    + on(InnerWall, c=cBC)
+;
+
+varf navierstokes([ux, uy, p], [uhx, uhy, ph])
+  = int2d(Mesh)(
+      rho/dt* [ux, uy]'* [uhx, uhy]
+    + mu* (Grad(u):Grad(uh))
+    - p* div(uh)
+    - ph* div(u)
+    - 1e-10 *p*ph
+    )
+  + int2d(Mesh) (
+      [fx, fy]' * [uhx, uhy]
+    + rho/dt* [convect([upx, upy], -dt, upx), convect([upx, upy], -dt, upy)]'* [uhx, uhy]
+    )
+  + on(Wall, InnerWall, ux=0, uy=0)
+  + on(Inlet, ux=uin, uy=0)
+  + on(Outlet, p=0)
+;
+
+[ux, uy, p]=[0, 0, 0];
+c = 0;
+
+NS = navierstokes(SpaceVector, SpaceVector);
+real[int] NSrhs = navierstokes(0, SpaceVector);
+A = diffuse(SpaceP1, SpaceP1);
+real[int] rhs = diffuse(0, SpaceP1);
+
+set(A, sparams = "-pc_type hypre");
+set(NS, sparams = "-pc_type lu");
+
+for(int i = 0; i < T/dt; i++)
+{
+  if(mpirank == 0)
+    cout << "iteration: " << i << endl;
+
+  [upx, upy, pp]=[ux, uy, p];
+  cold = c;
+
+  if (solveDiffusion)
+  {
+    rhs  = diffuse(0, SpaceP1);
+    c[] = A^-1 * rhs;
+  }
+
+  NSrhs = navierstokes(0, SpaceVector);
+  ux[] = NS^-1 * NSrhs;
+
+  if (i % saveEach == 0)
+    savevtk(outputFileName, Mesh, c, ux, uy, p, dataname="c u v p", order=orderOut,
+            append = i ? true : false);
+
+}
