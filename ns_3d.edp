@@ -109,7 +109,7 @@ names[0] = "velocity";
 names[1] = "pressure";
 set(A, sparams = "-pc_type hypre -ksp_monitor");
 set(NS, sparams = "-ksp_monitor -ksp_type fgmres -ksp_converged_reason -pc_type fieldsplit -pc_fieldsplit_type schur "
-                + "-fieldsplit_velocity_pc_type gamg -fieldsplit_pressure_ksp_max_it 5 -ksp_rtol 1e-4 "
+                + "-fieldsplit_velocity_pc_type gamg -fieldsplit_pressure_ksp_max_it 5 "
                 + "-fieldsplit_pressure_pc_type jacobi -fieldsplit_velocity_ksp_type preonly -pc_fieldsplit_schur_fact_type full",
                 fields = ux[], names = names);
 
