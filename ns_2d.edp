@@ -22,10 +22,10 @@ real uin = 0.3;
 func fx = 0;
 func fy = 0;
 
-real rho = 500.;
-real mu = 0.1;
+// real rho = 500.;
+real nu = 0.05;
 
-real Dc = 0.001;
+real Dc = 0.005;
 real cBC = 0.1;
 
 real dt = 0.1;
@@ -102,15 +102,15 @@ varf diffuse(c, v) =
 
 varf navierstokes([ux, uy, p], [uhx, uhy, ph])
   = int2d(Mesh)(
-      rho/dt* [ux, uy]'* [uhx, uhy]
-    + mu* (Grad(u):Grad(uh))
+      1/dt* [ux, uy]'* [uhx, uhy]
+    + nu * (Grad(u):Grad(uh))
     - p* div(uh)
     - ph* div(u)
     - 1e-10 *p*ph
     )
   + int2d(Mesh) (
       [fx, fy]' * [uhx, uhy]
-    + rho/dt* [convect([upx, upy], -dt, upx), convect([upx, upy], -dt, upy)]'* [uhx, uhy]
+    + 1/dt* [convect([upx, upy], -dt, upx), convect([upx, upy], -dt, upy)]'* [uhx, uhy]
     )
   + on(Wall, InnerWall, ux=0, uy=0)
   + on(Inlet, ux=uin, uy=0)
