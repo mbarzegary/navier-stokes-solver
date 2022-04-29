@@ -1,0 +1,103 @@
+load "PETSc"
+macro dimension()2//
+include "macro_ddm.idp"
+
+real dt = 0.1;
+real T = 200;
+int saveEach = 0.5/dt;
+int[int] orderOut = [1, 1, 1, 1];
+
+string meshFileName = "mesh/bend_pipe_2d.mesh";
+string outputFileName = "output/output-2d.vtu";
+
+int Wall = 1;
+int Inlet = 3;
+int Outlet = 2;
+int InnerWall = 4;
+
+real uin = 10;
+// real Re = getARGV("-Re", 100.0);
+real nu = 0.05;
+// nu = 1.0/Re;
+
+macro div(u) (dx(u#x) + dy(u#y))//
+macro grad(u) [dx(u), dy(u)]//
+macro UgradV(u, v)[[u#x, u#y]' * [dx(v#x), dy(v#x)],
+                   [u#x, u#y]' * [dx(v#y), dy(v#y)]]//
+
+mesh Mesh = readmesh(meshFileName);
+
+if (mpirank == 0)
+  cout << "Number of Elements: " + Mesh.nt << endl;
+
+func PkVector = [P2, P2, P1];
+
+buildDmesh(Mesh);
+Mat J;
+{
+  macro def(i)[i, i#B, i#C]//
+  macro init(i)[i, i, i]//
+  createMat(Mesh, J, PkVector)
+}
+
+fespace SpaceVector(Mesh, PkVector);
+SpaceVector [ucx, ucy, pc] = [uin, 0, 0];
+SpaceVector [uckx, ucky, pck];
+SpaceVector [ucxold, ucyold, pcold];
+
+if (mpirank == 0)
+  cout << "Finite Element DOF (in each partition): " + SpaceVector.ndof << endl;
+
+varf vRes([ux, uy, p], [vx, vy, q]) = int2d(Mesh)(
+      (1/dt*[uckx, ucky]' * [vx, vy]) - (1/dt*[ucxold, ucyold]' * [vx, vy]) +
+      nu * (grad(ucx)' * grad(vx) +
+            grad(ucy)' * grad(vy))
+    + UgradV(uc, uc)' * [vx, vy]
+    - pc * div(v) - div(uc) * q)
+    + on(Wall, InnerWall, ux = ucx-0, uy = ucy-0)
+    + on(Inlet, ux = 0, uy = 0);
+
+varf vJ([ux, uy, p], [vx, vy, q]) = int2d(Mesh)(
+      (1/dt*[ux, uy]' * [vx, vy]) +
+      (UgradV(uc, u) + UgradV(u, uc))' * [vx, vy] +
+      nu * (grad(ux)' * grad(vx) +
+            grad(uy)' * grad(vy))
+    - p * div(v) - div(u) * q)
+    + on(Wall, InnerWall, ux = ucx-0, uy = ucy-0)
+    + on(Inlet, ux = 0, uy = 0);
+
+set(J, sparams = "-pc_type lu");
+
+func real[int] funcRes(real[int]& inPETSc) {
+    ChangeNumbering(J, ucx[], inPETSc, inverse = true, exchange = true);
+    [uckx, ucky, pck]=[ucx, ucy, pc];
+    real[int] out(SpaceVector.ndof);
+    out = vRes(0, SpaceVector, tgv = -1);
+    ChangeNumbering(J, out, inPETSc);
+    return inPETSc;
+}
+
+func int funcJ(real[int]& inPETSc) {
+    ChangeNumbering(J, ucx[], inPETSc, inverse = true, exchange = true);
+    J = vJ(SpaceVector, SpaceVector, tgv = -1);
+    return 0;
+}
+
+for(int i = 0; i < T/dt; i++)
+{
+  if (mpirank == 0)
+    cout << "time step: " << i << endl;
+
+    [uckx, ucky, pck] = [ucx, ucy, pc];
+
+  real[int] xPETSc;
+  ChangeNumbering(J, ucx[], xPETSc);
+  SNESSolve(J, funcJ, funcRes, xPETSc, sparams = "-snes_monitor ");
+  ChangeNumbering(J, ucx[], xPETSc, inverse = true, exchange = true);
+
+  [ucxold, ucyold, pcold]=[ucx, ucy, pc];
+
+  if (i % saveEach == 0)
+    savevtk(outputFileName, Mesh, ucx, ucy, pc, dataname="u v p", order=orderOut,
+            append = i ? true : false);
+}
