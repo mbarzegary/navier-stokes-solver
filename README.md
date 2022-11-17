@@ -17,3 +17,14 @@ After installing the required software packages, the code can be run like this:
 `$ mpirun -n 4 FreeFem++-mpi ns_3d.edp -v 0`
 
 You can specify the number of employed cores (which also implies the number of mesh sub-partitions) by the `-n` switch (it is 4 in this example). The `-v 0` switch is used to suppress the verbosity of FreeFEM. For the 2D model, the input file is `ns_2d.edp`. The configs (such as the input mesh or the output location) can be modified in the source files.
+
+## Repository structure
+
+This repository consists of the following files/directories:
+
+* `ns_3d.edp`: transient 3D Navier-Stokes code coupled with a diffusion model, implemented using the characteristics method and a fieldsplit preconditioner
+* `ns_2d.edp`: transient 2D Navier-Stokes code coupled with a diffusion model, implemented using the characteristics method and an exact factorization preconditioner
+* `ns_2d_snes.edp`: transient 2D Navier-Stokes code implemented using the Newton-Raphson method and SNES non-linear solver
+* `navier_stokes-finite_element.pdf`: detailed explanation of the theory behind the finite element implementation and preconditioning of the Navier-Stokes equations
+* `mesh/`: directory containing sample mesh files
+* `output/`: directory to which the results (VTK files) will be written
